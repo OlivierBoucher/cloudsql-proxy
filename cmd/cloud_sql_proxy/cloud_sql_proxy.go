@@ -26,7 +26,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,6 +33,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/OlivierBoucher/cloudsql-proxy/log"
 
 	"github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/certs"
 	"github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/fuse"
@@ -73,6 +74,8 @@ can be removed automatically by this program.`)
 	token     = flag.String("token", "", "When set, the proxy uses this Bearer token for authorization.")
 	tokenFile = flag.String("credential_file", "", `If provided, this json file will be used to retrieve Service Account credentials.
 You may set the GOOGLE_APPLICATION_CREDENTIALS environment variable for the same effect.`)
+
+	verbose = flag.Bool("verbose", false, "When set, uses the verbose logger.")
 )
 
 const (
@@ -150,6 +153,12 @@ Information for all flags:
 			fmt.Fprintf(os.Stderr, "  -%s\n    %s\n\n", f.Name, usage)
 		})
 	}
+
+	flag.Parse()
+
+	if *verbose {
+		log.SetVerbose()
+	}
 }
 
 // SQLScope is the Google Cloud Platform scope required for executing API
@@ -214,7 +223,7 @@ func authenticatedClient(ctx context.Context) (*http.Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid json file %q: %v", f, err)
 		}
-		log.Printf("using credential file for authentication; email=%s", cfg.Email)
+		log.Infof("using credential file for authentication; email=%s", cfg.Email)
 		return cfg.Client(ctx), nil
 	} else if tok := *token; tok != "" {
 		src := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: tok})
@@ -259,7 +268,7 @@ func listInstances(ctx context.Context, cl *http.Client, projects []string) ([]s
 				return nil
 			})
 			if err != nil {
-				log.Printf("Error listing instances in %v: %v", proj, err)
+				log.Errorf("Error listing instances in %v: %v", proj, err)
 			}
 			wg.Done()
 		}()
@@ -288,7 +297,7 @@ func gcloudProject() []string {
 			// gcloud not installed; ignore the error
 			return nil
 		}
-		log.Printf("Error detecting gcloud project: %v", err)
+		log.Errorf("Error detecting gcloud project: %v", err)
 		return nil
 	}
 
@@ -299,12 +308,12 @@ func gcloudProject() []string {
 	}
 
 	if err := json.Unmarshal(buf.Bytes(), &data); err != nil {
-		log.Printf("Failed to unmarshal bytes from gcloud: %v", err)
-		log.Printf("   gcloud returned:\n%s", buf)
+		log.Errorf("Failed to unmarshal bytes from gcloud: %v", err)
+		log.Errorf("   gcloud returned:\n%s", buf)
 		return nil
 	}
 
-	log.Printf("Using gcloud's active project: %v", data.Core.Project)
+	log.Infof("Using gcloud's active project: %v", data.Core.Project)
 	return []string{data.Core.Project}
 }
 
@@ -326,8 +335,6 @@ func Main(timeout time.Duration) {
 }
 
 func main() {
-	flag.Parse()
-
 	if *version {
 		fmt.Println("Cloud SQL Proxy:", versionString)
 		return
@@ -386,7 +393,7 @@ func main() {
 						return nil
 					})
 					if err != nil {
-						log.Print(err)
+						log.Error(err)
 					}
 					time.Sleep(5 * time.Second)
 				}
@@ -400,7 +407,7 @@ func main() {
 		connSrc = c
 	}
 
-	log.Print("Ready for new connections")
+	log.Info("Ready for new connections")
 
 	(&proxy.Client{
 		Port:  port,
